@@ -35,15 +35,16 @@ theme_happy <- function()
 ```
 
 
-  One, two, three, not only you and me... Yep, I'm now listening at Birt's 3. Plus, obeying the "rule of three" -- a writing principle suggests that things coming in threes are funnier, more satisfying, or more effective than other numbers or things -- I decide to break my report into three parts:
+  I decide to break my report into 2 parts:
   
-+ 1. Some basic explatory data analysis
++ 1. Basic explatory data analysis
 + 2. Sentiment analysis
-+ 3. LDA
 
-### Step1. Explatory Analysis
+# Step1. Explatory Analysis
 Firstly, given the already "washed" HAPPY MOMENT data which is ready for use up to the level sentiment analysis, I will simply perform some straightfoward exploratory analysis which shall give some intuitions other than those graphics in Rshiny ui.
-# short glimpse of data
+
+### short glimpse of data
+
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 #read in the hm_data(complete version)
 
@@ -73,7 +74,9 @@ hm_data1<- mutate(hm_data1, country = ifelse(!hm_data1$country %in% c("USA","IND
 
 glimpse(hm_data1)
 ```
+
 ##1.1 Popular words by gender
+
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
  bag_of_words <-  hm_data1 %>%
   unnest_tokens(word, text)
@@ -102,6 +105,7 @@ glimpse(hm_data1)
 In chart "Comparison of Proportions" in the Rshiny UI, the marginal popularity of word's distribution among genders is vague and fuzzy so I drew a graph that could deliver a closer look. What are the insights that you can gather from above? Well, though the dominant words of both men and women are day, time and friends, women tend to consider more of their offsprings -- son and daughter -- while male characters tend to watch TV or play games.
 
 ##1.2 Sentence length distribution
+
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
  number_word_length <- hm_data1 %>%
   group_by(count, country) %>%
@@ -117,6 +121,7 @@ In chart "Comparison of Proportions" in the Rshiny UI, the marginal popularity o
         
 ```
 As we can see from the figure,  the distribution is very fat-tailed, the max sentence length even reaches 509. The reason why there are so much outliers are some people just copied an essay as an answer of happy moment which read: *"This is the second essay in a two-part series about my journey to visit the Taj Mahal. Read the first part for the whole story...* so I decide to truncate the sentence length distribution.
+
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 number_word_length2<-number_word_length1 <- hm_data1 %>%
   group_by(count) %>%
@@ -152,6 +157,7 @@ number_word_length1$number_same_word<-number_word_length1$number_same_word/numbe
 Now, the outlier problem is solved. Notice Indians are good at writing long sentences.
 
 ##1.3 Lexical diversity
+
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 library(yarrr)
 
@@ -178,7 +184,11 @@ pirateplot(formula =  word_count ~ country, #Formula
 
 ```
 This pic conveys an intuition that though Americans tend to write short, they bear a larger lexical diversity than Indians. The avg.of lexical diversity is influnced by that "essay" outlier a lot thus I ignored it.
-### Step2. Sentiment
+
+# Step2. Sentiment Analysis
+
+##2.1 Look up nrc lexicon
+
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 library(kableExtra)
 library(knitr)
@@ -216,7 +226,10 @@ bag_of_words %>%
   my_kable_styling(caption = "Lyrics Found In Lexicons")
 ```
 In project's archive, they have done sentiment analyse by using LIWC and VAD score. So I shall use nrc lexicon to conduct sentiment analyse. From above we know there are 6,468 words in nrc lexicon and distributed in 10 emotions. In the cleaned version of HAPPY DB, we have 2338 linked words out of 18812 unique words with nrc lexicon, taking up 12.4% of unique words.
-```{r}
+
+##2.2 Sentiment Analysis Bar Chart
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
 happy_nrc_sub <- bag_of_words %>%
   inner_join(get_sentiments("nrc")) %>%
   filter(!sentiment %in% c("positive", "negative"))
