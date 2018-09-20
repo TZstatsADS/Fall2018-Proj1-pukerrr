@@ -1,0 +1,258 @@
+---
+title: "pj1_report: HAPPY MOMENTS"
+author: "yp2446"
+date: "20th Sep 2018"
+output: html_document
+theme: spacelab
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidytext)
+library(DT)
+library(scales)
+library(wordcloud2)
+library(gridExtra)
+library(ngram)
+library(shiny) 
+library(tm)
+
+my_colors <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#D55E00")
+
+theme_happy <- function() 
+{
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x = element_blank(), 
+        axis.ticks = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "none")
+}
+```
+
+
+  One, two, three, not only you and me... Yep, I'm now listening at Birt's 3. Plus, obeying the "rule of three" -- a writing principle suggests that things coming in threes are funnier, more satisfying, or more effective than other numbers or things -- I decide to break my report into three parts:
+  
++ 1. Some basic explatory data analysis
++ 2. Sentiment analysis
++ 3. LDA
+
+### Step1. Explatory Analysis
+Firstly, given the already "washed" HAPPY MOMENT data which is ready for use up to the level sentiment analysis, I will simply perform some straightfoward exploratory analysis which shall give some intuitions other than those graphics in Rshiny ui.
+# short glimpse of data
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#read in the hm_data(complete version)
+
+hm_data1<-read_csv("../output/processed_moments.csv")
+urlfile<-'https://raw.githubusercontent.com/rit-public/HappyDB/master/happydb/data/demographic.csv'
+demo_data <- read_csv(urlfile)
+
+hm_data1 <- hm_data1 %>%
+  inner_join(demo_data, by = "wid") %>%
+  select(wid,
+         original_hm,
+         gender, 
+         marital, 
+         parenthood,
+         reflection_period,
+         age, 
+         country, 
+         ground_truth_category, 
+         text) %>%
+  mutate(count = sapply(hm_data1$text, wordcount))  %>%
+  filter(gender %in% c("m", "f")) %>%
+  filter(marital %in% c("single", "married")) %>%
+  filter(parenthood %in% c("n", "y")) %>%
+  filter(reflection_period %in% c("3m", "24h"))
+
+hm_data1<- mutate(hm_data1, country = ifelse(!hm_data1$country %in% c("USA","IND"),"OTHER", country))
+
+glimpse(hm_data1)
+```
+##1.1 Popular words by gender
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ bag_of_words <-  hm_data1 %>%
+  unnest_tokens(word, text)
+
+ gender_word_count<-bag_of_words %>%
+      group_by(gender) %>%
+      count(word, gender, sort=TRUE) %>%
+      slice(1:8) %>%
+      ungroup() %>%
+      mutate(word = reorder(word, n)) %>%
+      arrange(gender,n) %>%
+      mutate(row = row_number()) 
+
+ gender_word_count  %>%    
+      ggplot(aes(row, n, fill = gender)) +
+      geom_col(show.legend = NULL) +
+      labs(x = NULL, y = "popular words") +
+      ggtitle("Popular Words by gender") + 
+      theme_happy() +  
+      facet_wrap(~gender, scales = "free") +
+      scale_x_continuous(  # This handles replacement of row 
+      breaks = gender_word_count$row, # notice need to reuse data frame
+      labels = gender_word_count$word) +
+      coord_flip()
+```
+In chart "Comparison of Proportions" in the Rshiny UI, the marginal popularity of word's distribution among genders is vague and fuzzy so I drew a graph that could deliver a closer look. What are the insights that you can gather from above? Well, though the dominant words of both men and women are day, time and friends, women tend to consider more of their offsprings -- son and daughter -- while male characters tend to watch TV or play games.
+
+##1.2 Sentence length distribution
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ number_word_length <- hm_data1 %>%
+  group_by(count, country) %>%
+  summarise(number_same_word = n())
+
+ number_word_length %>% 
+  ggplot() + 
+  geom_bar(aes(x = count, y = number_same_word, 
+               fill = country), stat = "identity") +
+  
+  labs(x = NULL, y = "Sentence Length Count") +
+  ggtitle("Sentence Length Distribution")
+        
+```
+As we can see from the figure,  the distribution is very fat-tailed, the max sentence length even reaches 509. The reason why there are so much outliers are some people just copied an essay as an answer of happy moment which read: *"This is the second essay in a two-part series about my journey to visit the Taj Mahal. Read the first part for the whole story...* so I decide to truncate the sentence length distribution.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+number_word_length2<-number_word_length1 <- hm_data1 %>%
+  group_by(count) %>%
+  summarise(number_same_word = n())%>%
+  ungroup()%>%
+  slice(1:23) 
+
+ number_word_length2 %>% 
+  ggplot() + 
+  geom_bar(aes(x = count, y = number_same_word), stat = "identity") +
+  labs(x = NULL, y = "Sentence Length Count") +
+  ggtitle("Sentence Length Distribution")
+
+number_word_length3<-as.data.frame(number_word_length2)[,2] %>% rep(each=3)
+
+
+number_word_length1 <- hm_data1 %>%
+  group_by(count, country) %>%
+  summarise(number_same_word = n())%>%
+  ungroup()%>%
+  slice(1:69)
+   
+number_word_length1$number_same_word<-number_word_length1$number_same_word/number_word_length3
+
+ number_word_length1 %>% 
+  ggplot() + 
+  geom_bar(aes(x = count, y = number_same_word, 
+               fill = country), stat = "identity") +
+  labs(x = NULL, y = "Word Length Percentage") +
+  ggtitle("Country Percentage when Same Sentence Length")
+
+```
+Now, the outlier problem is solved. Notice Indians are good at writing long sentences.
+
+##1.3 Lexical diversity
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(yarrr)
+
+word_summary <- bag_of_words %>%
+  group_by(country,wid) %>%
+  mutate(word_count = n_distinct(word)) %>%
+  select(wid, country,  word_count) %>%
+  distinct() %>% #To obtain one record per song
+  ungroup()
+
+word_summary <-word_summary[word_summary$word_count<200,]
+
+pirateplot(formula =  word_count ~ country, #Formula
+   data = word_summary, #Data frame
+   xlab = NULL, ylab = "Distinct Word Count", #Axis labels
+   main = "Lexical Diversity Per Decade", #Plot title
+   pal = "google", #Color scheme
+   point.o = .2, #Points
+   theme = 0, #Theme
+   point.pch = 16, #Point `pch` type
+   point.cex = 1.5, #Point size
+   jitter.val = .1, #Turn on jitter to see the songs better
+   cex.lab = .9, cex.names = .7) #Axis label size
+
+```
+This pic conveys an intuition that though Americans tend to write short, they bear a larger lexical diversity than Indians. The avg.of lexical diversity is influnced by that "essay" outlier a lot thus I ignored it.
+### Step2. Sentiment
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(kableExtra)
+library(knitr)
+library(tidyr)
+library(formattable)
+
+my_kable_styling <- function(dat, caption) {
+  kable(dat, "html", escape = FALSE, caption = caption) %>%
+  kable_styling(bootstrap_options = c("striped", "condensed", "bordered"),
+                full_width = FALSE)
+}
+
+new_sentiments <- sentiments %>% 
+  filter(lexicon == "nrc") %>%
+  group_by(lexicon) %>%
+  mutate(words_in_lexicon = n_distinct(word)) %>%
+  ungroup()
+
+new_sentiments %>%
+  group_by(lexicon, sentiment, words_in_lexicon) %>%
+  summarise(distinct_words = n_distinct(word)) %>%
+  ungroup() %>%
+  spread(sentiment, distinct_words) %>%
+  my_kable_styling(caption = "Total Word Counts Of nrc")
+
+bag_of_words %>%
+  mutate(words_in_hm = n_distinct(word)) %>%
+  inner_join(new_sentiments) %>%
+  group_by(lexicon, words_in_hm, words_in_lexicon) %>%
+  summarise(lex_match_words = n_distinct(word)) %>%
+  ungroup() %>%
+  mutate(total_match_words = sum(lex_match_words), 
+         match_ratio = lex_match_words / words_in_hm) %>%
+  select(lexicon, lex_match_words,  words_in_hm, match_ratio) %>%
+  my_kable_styling(caption = "Lyrics Found In Lexicons")
+```
+In project's archive, they have done sentiment analyse by using LIWC and VAD score. So I shall use nrc lexicon to conduct sentiment analyse. From above we know there are 6,468 words in nrc lexicon and distributed in 10 emotions. In the cleaned version of HAPPY DB, we have 2338 linked words out of 18812 unique words with nrc lexicon, taking up 12.4% of unique words.
+```{r}
+happy_nrc_sub <- bag_of_words %>%
+  inner_join(get_sentiments("nrc")) %>%
+  filter(!sentiment %in% c("positive", "negative"))
+# I don't want the dominant positive.
+
+nrc_plot <- happy_nrc_sub %>%
+  group_by(sentiment, gender) %>%
+  summarise(word_count = n()) %>%
+  ungroup() %>%
+  mutate(sentiment = reorder(sentiment, word_count)) %>% as.data.frame()
+  
+  ggplot(nrc_plot, mapping = aes(sentiment, word_count, fill =  gender)) +
+  geom_bar(stat="identity")
+
+  ggtitle("Happydb NRC Sentiment") +
+  coord_flip()
+```
+
+As we can see here, to most happy moment corpus, the nrc supports joy, trust, anticipation and surprise. It is in consistence with the convergency. what's more, male covers more words than female, I think this is because men tend to use more moody words when writing while women tend to write more nouns to describe.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
